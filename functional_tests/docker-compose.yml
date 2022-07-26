@@ -1,0 +1,63 @@
+version: '3.4'
+
+services:
+  integration:
+    image: integration
+    build: 
+      context: ../tests/WG.Uos.Adapter.Functional.Tests
+      dockerfile: Dockerfile.functional_tests
+    environment:
+      - ConnectionStrings__UosDatabaseConnectionString=Data Source=db;Initial Catalog=UosManagementStest;User Id=sa;Password=Your_password123;Pooling=False;Max Pool Size=200;MultipleActiveResultSets=True
+      - MW-RabbitMq__hostNames=rabbitmq     
+    command: bash -c "
+             sleep 30 &&
+             dotnet test --logger:'trx;LogFileName=/tmp/tests/TestResults.xml'"
+    volumes:
+      - ./result:/tmp/tests
+    restart: on-failure
+    depends_on:
+      - uosadapter
+
+  uosadapter:
+    image: uosadapter
+    build:
+      context: ../
+      dockerfile: Dockerfile.uos_adapter
+    restart: on-failure
+    environment:
+      - UosDatabaseConnectionString=Data Source=db;Initial Catalog=UosManagementStest;User Id=sa;Password=Your_password123;Pooling=False;Max Pool Size=200;MultipleActiveResultSets=True
+      - MW-RabbitMq__hostNames=rabbitmq;localhost;
+    depends_on:
+      - db
+      - rabbitmq
+  
+  db:
+    image: uosmssql
+    build:
+      context: .
+      dockerfile: data/Dockerfile.uos_database
+    environment:
+        SA_PASSWORD: "Your_password123"
+        ACCEPT_EULA: "Y"
+    ports:
+      - "1450:1433"
+    healthcheck:
+      test: ["CMD" ,"ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+
+  rabbitmq:
+    hostname: "rabbitmq"
+    image: rabbitmq:3.9-management
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: [ "CMD", "rabbitmqctl", "status", "-f", "http://localhost:15672"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
